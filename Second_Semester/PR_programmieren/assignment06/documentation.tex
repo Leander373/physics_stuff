@@ -1,0 +1,222 @@
+\documentclass[12pt,a4paper]{article}
+% Essential packages
+\usepackage[utf8]{inputenc} % Character encoding
+\usepackage{graphicx} % For images
+\usepackage{amsmath} % For mathematical formulas
+\usepackage{hyperref} % For hyperlinks
+% Listings for code
+\usepackage{listings}
+\lstset{
+ language=C,
+ basicstyle=\ttfamily\small,
+ numbers=left,
+ frame=single,
+ breaklines=true,
+}
+% Tighten space before sections
+\usepackage{titlesec}
+\titlespacing*{\section}{0pt}{0.5em}{0.5em}
+\titlespacing*{\subsection}{0pt}{0.3em}{0.3em}
+\setlength{\parindent}{0pt}
+
+% Document metadata
+\title{Documentation Group Project 1 (Assignment06)}
+\author{Mario Neuner, Leander Decristoforo}
+\date{\today}
+\begin{document}
+\maketitle
+\tableofcontents
+\pagebreak
+
+\section{Problem01: 7001st prime}
+\vspace{0pt}
+\subsection{Implementation}
+For this problem we thought of a simple looping strategy: start at 2 and loop through every number. While doing so check for
+primes and increment a counter for every prime found. When the 7001st prime is found the while loop terminates and the last prime
+(therefore the 7001st) is assigned to the result variable and printed out at the end of the file. Other variables used are:
+\begin{itemize}
+\item \texttt{validation} -- for confirming if a number is prime
+\item \texttt{count} -- for counting the number of found primes
+\item \texttt{run} -- for running through the natural numbers and checking each for primality
+\end{itemize}
+\subsection{Output}
+\texttt{The program compiles with "gcc -Wall -Wextra -Werror -Wpedantic -std=c18 prime\_7001.c -o prime".}
+When running \texttt{./prime} you get the output: 
+\newline
+"The 7001st prime is 70663.000000"
+
+% Code listing with no float parameter
+\begin{lstlisting}[caption={7001st prime in C},label={lst:p7001}]
+ #include <stdio.h>
+ #define NUM 7001
+ // Authors: Mario Neuner, Leander Decristoforo
+ int main(void) {
+ int count = 0, validation = 0; // 0 means prime, 1 not
+ long double result = 0, run = 2;
+ while (count != NUM) {
+ for (int i = 2; (i * i) <= run; i++) {
+ // Check if prime
+ if (((long long)run % i) == 0) {
+ validation = 1;
+ }
+ }
+ if (validation == 0) {
+ count++;
+ result = run;
+ }
+ run++;
+ validation = 0;
+ }
+ printf("The 7001st prime is %Lf\n", result);
+ return 0;
+ }
+\end{lstlisting}
+
+\vspace{10em}
+
+\section{Problem02: 5-6-numbers}
+\subsection{Implementation}
+For this problem we started a while loop that breaks when the desired numbers are found.
+For this to happen we start with a few variables for keeping track of everything, you find 
+the exact usage at the end of this section. Now we startet with n = 165 and m = 144 since we
+have to find new values where sm = fn. For that we first compute sm and the start the while 
+loop, in which we compute the current fn value and then again loop through every sm value until
+the first element of sm being >= fn. Then we check whether sm is equal to fn and in that case we
+found our new values. Otherwise we proceed with incrementing n and starting the loop all over
+again. This takes a while, but after having found the new elements the code prints the new numbers.
+The variables used are: 
+\begin{itemize}
+    \item \texttt{n} -- for tracking the n values
+    \item \texttt{m} -- for tracking the m values
+    \item \texttt{sm} -- for tracking the current sm sequence element
+    \item \texttt{fn} -- for tracking the current fn sequence element
+\end{itemize}
+\subsection{Output}
+\texttt{The program compiles with "gcc -Wall -Wextra -Werror -Wpedantic -std=c18 5\_6\_nums.c -o nums".}
+When running \texttt{./nums} you get the output: 
+\newline
+"The next same number are at m = 27693, n = 31977 with fn = sm = 1533776805.000000 (1533776805.000000)"
+
+\begin{lstlisting}[caption={7001st prime in C},label={lst:p7001}]
+    #include <stdio.h>
+    #include <stdlib.h>
+    // Authors: Mario Neuner, Leander Decristoforo
+
+    int main(void) {
+        // Start at n 166 and m 144
+        long n = 165, m = 144;       // 0 == not found, 1 == found
+        long double sm = m * (2 * m -1), fn = 0;
+        while (1) {
+            // Calculate current sequence values
+            fn = (n * (3 * n - 1)) / 2;
+            // Go through elements of sm until >= fn
+            while (fn > sm) {
+                m++;
+                sm = m * (2 * m -1);
+            }
+            // Check if sm equal to fn
+            if (sm == fn) {
+                break;
+            }
+            n++;
+        }
+        printf("The next same number are at m = %ld, n = %ld with fn = sm = %Lf (%Lf)\n", m, n, sm, fn);
+        return EXIT_SUCCESS; 
+    }
+\end{lstlisting}
+
+\vspace{10em}
+   
+\section{Problem03: primeseries-generator}
+\subsection{Implementation}
+Now this problem to be honest was a bit more challenging. For this problem we implemented a first function called "is\_prime"
+for determining whether a given number is prime like we did in problems before. 
+\newline
+The second function called largest\_n finds for 
+provided integers a, b and c the maximum value of n such that every natural number from 0 to n the formula computes a prime. We 
+did this with a while loop that computes the formula and tests the result with the "is\_prime" function and for the case that the
+result is less than 1 and thus not prime.  
+\newline
+In the main function we just looped through every possible values for a, b and c and first assured that c is prime, for the case 
+n = 0. Then we proceeded by computing the largest value for n with the current a, b and c values via the "largest\_n" fuction and
+afterwards compared it to maximum n value. In this way we can be sure to get the correct maximum n value. The program prints the 
+max n value at the end of the program.
+\newline
+The variables used are:
+\vspace{1em}
+\newline
+Main:
+\begin{itemize}
+    \item \texttt{max} -- for tracking the maximum n value
+    \item \texttt{current\_n} -- for holding the current n value
+    \item \texttt{a,b,c} -- for looping and getting the largest n
+\end{itemize}
+
+\vspace{1em}
+larges\_n:
+\begin{itemize}
+    \item \texttt{nmax} -- for tracking the maximum n value
+    \item \texttt{result} -- for storing the result of the formula computations
+\end{itemize}
+\subsection{Output}
+\texttt{The program compiles with "gcc -Wall -Wextra -Werror -Wpedantic -std=c18 primeseriesg.c -o primeseries".}
+When running \texttt{./primeseries} you get the output: 
+\newline
+"The maximum value for n is 28"
+
+\vspace{3em}
+\begin{lstlisting}[caption={7001st prime in C},label={lst:p7001}]
+    #include <stdio.h>
+    #include <stdlib.h>
+    #define LIMIT 333
+    
+    // Checks prime, 0 if, 1 if not
+    int is_prime(int n) {
+        if (n < 2) {
+            return 0;
+        }
+        for (int i = 2; i * i <= n; i++) {
+            if (n % i == 0) {
+                return 0;
+            }
+        }
+        return 1;
+    }
+    
+    // Check for largest n with given a,b,c
+    long long largest_n(int a, int b, int c) {
+        long long nmax = 0;
+        long long result = 0;
+        while (1) {
+            result = (nmax * nmax * nmax) + a * (nmax * nmax) + b * nmax + c;
+            if (!is_prime(result) || result < 2) {
+                return nmax - 1;
+            }
+            nmax++;
+        }
+    }
+    
+    int main(void) {
+        long long max = 0, current_n = 0;
+    
+        // Loop through every possible a,b and c
+        for (int a = -LIMIT + 1; a < LIMIT; a++) {
+            for (int b = -LIMIT; b < LIMIT; b++) {
+                for (int c = -LIMIT; c < LIMIT; c++) {
+                    if(!is_prime(c)) {
+                        continue;
+                    }
+                    // Compute largest n for a,b,c
+                    current_n = largest_n(a, b, c);
+                    if (current_n > max) {
+                        max = current_n;
+                    }
+                }
+            }
+        }
+        fprintf(stdout, "The maximum value for n is %lld\n", max);
+        return EXIT_SUCCESS;
+    }
+\end{lstlisting}
+
+\end{document}

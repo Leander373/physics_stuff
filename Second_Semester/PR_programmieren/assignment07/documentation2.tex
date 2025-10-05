@@ -1,0 +1,256 @@
+\documentclass[12pt,a4paper]{article}
+% Essential packages
+\usepackage[utf8]{inputenc} % Character encoding
+\usepackage{graphicx} % For images
+\usepackage{amsmath} % For mathematical formulas
+\usepackage{hyperref} % For hyperlinks
+% Listings for code
+\usepackage{listings}
+\lstset{
+ language=C,
+ basicstyle=\ttfamily\small,
+ numbers=left,
+ frame=single,
+ breaklines=true,
+}
+% Tighten space before sections
+\usepackage{titlesec}
+\titlespacing*{\section}{0pt}{0.5em}{0.5em}
+\titlespacing*{\subsection}{0pt}{0.3em}{0.3em}
+\setlength{\parindent}{0pt}
+
+% Document metadata
+\title{Documentation Group Project 2 (Assignment07)}
+\author{Mario Neuner, Leander Decristoforo}
+\date{\today}
+\begin{document}
+\maketitle
+\tableofcontents
+\pagebreak
+
+
+% Problem 1
+\section{Problem01: Addition long numbers}
+\vspace{0pt}
+\subsection{Idea}
+In this problem we had to add a 30 numbers with each consisting of 40 digit numbers encoded in long chain
+of integers. Because there is no such common data type to store such big numbers we decided to use arrays
+instead and use them to implement the addition logic. So, the idea was to create two arrays, one for the result 
+and another for the 1200 digit string and then use loops to calculate and store each digit in the result array.
+\newline
+
+\subsection{Implementation}
+Firstly, we allocated space for the result integer array and initialized it with 0s. Afterwards we created a 
+string for storing the long number containing the 40 digit numbers. We continued with creating the addition 
+logic and started a double loop, the first one for the 40 digits and the second one for the 30 numbers. At the
+start of every iteration we calculated the correct index for the 1200 number and checked for negative indices, just
+to prevent errors. Then we set a new variable called digit to the digit of the number with the corresponding index 
+and a position variable for the correct index in the result array. For a proper addition we first calulated the sum
+of the result element and the digit variable and only set the result element to the sum modulo 10, we assigned 
+the rest (i.e. sum/10) to the next element in the array and continued the loop thereafter. The last few lines of code
+check for the first digit in the result array to be non 0 and then prints out the number from that start.
+\newline
+
+\subsection{Output}
+\texttt{The program compiles with "gcc -Wall -Wextra -Werror -Wpedantic -std=c18 addition.c -o addition".}
+When running \texttt{./addition} you get the output: 
+\newline
+"The result (sum) is:
+179160132458177213830275506295538542694832"
+\newline
+
+% Code listing with no float parameter
+\begin{lstlisting}[caption={Addition},label={lst:p7001}]
+    #include <stdlib.h>
+    #include <stdio.h>
+    // Authors: Mario Neuner, Leander Decristoforo
+
+    int main(void) {
+        // Allocate space for arrays
+        int *result = malloc(50 * sizeof(int));
+        if (result == NULL) {
+            fprintf(stderr, "ERROR: Not enough space for array allocation!\n");
+            return EXIT_FAILURE;
+        }
+        
+        // Initialize result array to zeros
+        for (int i = 0; i < 50; i++) {
+            result[i] = 0;
+        }
+        
+        char nums[1200] = "93891810910476303037829...";
+        
+        // Addition
+        for (int i = 0; i < 30; i++) {
+            for (int j = 0; j < 40; j++) {
+                // Calculate the correct index: Start from end of string and move backwards
+                int index = 1199 - i*40 - j;
+                if (index >= 0) {
+                    int digit = nums[index] - '0';
+                    // Add to corresponding position in result
+                    int pos = 49 - j;
+                    int sum = result[pos] + digit;
+                    result[pos] = sum % 10;
+                    
+                    // Add the rest to higher digits
+                    if (sum >= 10) {
+                        if (pos > 0) {
+                            result[pos-1] += sum / 10;
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Print sum
+        fprintf(stdout, "The result (sum) is:\n");
+        
+        // Find first non-zero digit
+        int first_non_zero = 0;
+        while (first_non_zero < 49 && result[first_non_zero] == 0) {
+            first_non_zero++;
+        }
+        
+        // Print from first non zero digit to least
+        for (int i = first_non_zero; i < 50; i++) {
+            fprintf(stdout, "%d", result[i]);
+        }
+        fprintf(stdout, "\n");
+        
+        free(result);
+        return EXIT_SUCCESS;
+    }
+\end{lstlisting}
+    
+\vspace{10em}
+
+
+% Problem 2
+\section{Problem02: Pokerchips and Probability}
+\subsection{Implementation and idea}
+For this problem we started with defining the required variables: The amount of total chips given, 
+the amount of chips that are pulled out of the bag and the amount of chips with a value of ten euros. 
+Following these definitions, we computed the expected value with a standard statistics formula: 
+The probability to pull out a ten-euro-chip is multiplied by the amount of chips that are pulled out of 
+the bag simultaneously. In conclusion, the result of this computation is printed via a standard print statement. 
+\newline
+
+\subsection{Output}
+\texttt{The program compiles with "gcc -Wall -Wextra -Werror -Wpedantic -std=c18 Pokerchips.c -o poker".}
+When running \texttt{./poker} you get the output: 
+\newline
+"The expected value for this draw is 1.800"
+
+\begin{lstlisting}[caption={Pokerchips},label={lst:p7001}]
+    #include <stdio.h>
+    // Authors: Mario Neuner, Leander Decristoforo
+
+    int main(void)
+    {
+        // definition of required variables
+        float chips_in_total = 50;
+        float chips_drawn = 9;
+        float zehn_euro_chips = 10;
+
+        // computation of expected value via standard formula
+        float erwartungswert = (chips_drawn * zehn_euro_chips / chips_in_total);
+
+        // print statement for result
+        printf("The expected value for this draw is %.3f\n", erwartungswert);
+
+        return 0;
+    }
+\end{lstlisting}
+
+\vspace{10em}
+
+
+% Problem 3
+\section{Problem03: gapped square}
+\subsection{Idea}
+The goal of this problem was to find another number which when squared follows a particular pattern, namely "1\_2\_3\_4\_5\_4\_3\_2\_1\_0" 
+where all "\_" is an arbitrary digit. Therefore our idea was to use again a looping techinque and several conditionals for checking the 
+each number until one is found that differs from the provided 1010101010.
+\newline
+
+\subsection{Implementation}
+For this problem we started with implementing a function for computing the powers of 10 with a given integer (here just positive) for the 
+sake of convinience later in the code. Then the main functions starts with some variables for keeping track of the current number (num) as 
+well as the result (result) of its square and boolean (found) for terminating the upcoming while-loop. We started with a sufficiently big number and terminated
+latest at the number with a bigger square than the desired pattern. In the iteration we started with incrementing the number by a factor of 10 
+since the last digit must be a 0 and set our boolean to true. Afterwards we checked for skipping the provided solution, telling the reader we did so.
+The last and crucial part of the loop first looks for the correct last 5 provided digits to be correct via a for loop, modulo 10 and the division by the
+desired power of ten with our neat function. Before the first 5 conditions are checked in a similar fashion, we sorted out the wrong numbers and continued.
+To be honest, the time efficiency of this alghorithm is certainly not the fastes but thus a bit easier to read and code.
+\newline
+
+\vspace{1em}
+
+\subsection{Output}
+\texttt{The program compiles with "gcc -Wall -Wextra -Werror -Wpedantic -std=c18 gapped\_square.c -o gs".}
+When running \texttt{./gs} you get the output: 
+\newline
+"Found 1010101010 
+\newline
+The number is 1194710910 with the square 1427334158473028100"
+
+\vspace{3em}
+\begin{lstlisting}[caption={Gapped square},label={lst:p7001}]
+    #include <stdio.h>
+    #include <stdlib.h>
+    #include <stdbool.h>
+    // Authors: Mario Neuner, Leander Decristoforo
+
+    long long power_10(int power) {
+        long long result = 1;
+        for (int i = 0; i < power; i++) {
+            result *= 10;
+        }
+        return result;
+    }
+
+    int main (void) {
+        long long num = 1010100000, result = 0;
+        bool found = false;
+        // Loop through numbers
+        while (found == false && num < 1390000000) {      // ~sqrt(1930000000000000000)
+            // Increment variable
+            num += 10;
+
+            result = num * num;
+            found = true;
+
+            if (num == 1010101010) {
+                fprintf(stdout,"Found 1010101010\n");
+                found = false;
+                continue;
+            }
+
+            // Check second 5 conditions
+            for (int i = 4; i >= 0; i--) {
+                if ((result / power_10(2 * i)) % 10 != i) {
+                    found = false;
+                    break;
+                }
+            }
+
+            // If conditions so far false, continue
+            if (found == false) {
+                continue;
+            }
+
+            // Check first 5 conditions
+            for (int i = 1; i <= 5; i ++) {
+                if ((result / power_10(20 - 2*i)) % 10 != i) {
+                    found = false;
+                    break;
+                }
+            }
+        }
+
+        fprintf(stdout, "The number is %lld with the square %lld\n", num, result);
+        return EXIT_SUCCESS;
+    }
+\end{lstlisting}
+
+\end{document}

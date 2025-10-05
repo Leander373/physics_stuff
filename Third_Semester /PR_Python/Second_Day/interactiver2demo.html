@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Interaktives R²–Demo: Fit‑Güte visualisieren</title>
+<style>
+  :root{--fg:#0b132b;--muted:#546a7b;--acc:#3a86ff;--bad:#e63946;--ok:#2a9d8f}
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:18px;color:var(--fg)}
+  h1{font-size:22px;margin:0 0 10px}
+  .row{display:flex;flex-wrap:wrap;gap:16px}
+  .panel{flex:1 1 360px;min-width:320px;border:1px solid #e6e6e6;border-radius:12px;padding:14px;box-shadow:0 2px 8px rgba(0,0,0,.04);background:#fff}
+  label{display:block;margin:8px 0 2px}
+  input[type=range],select{width:100%}
+  canvas{border:1px solid #eee;border-radius:8px;background:#fff}
+  .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .kpi{border:1px dashed #ddd;border-radius:10px;padding:8px 10px}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .small{font-size:13px;color:var(--muted)}
+  button{padding:8px 12px;border-radius:10px;border:1px solid #ddd;background:#f7f7f7;cursor:pointer}
+  button:hover{background:#f0f0f0}
+</style>
+</head>
+<body>
+<h1>Interaktives R²–Demo: Güte eines Fits</h1>
+<p class="small">
+R² wird berechnet als <span class="mono">R² = 1 - SS<sub>res</sub> / SS<sub>tot</span>, wobei
+<span class="mono">SS<sub>res</sub> = Σ (yᵢ - ŷᵢ)²</span> und <span class="mono">SS<sub>tot</sub> = Σ (yᵢ - ȳ)²</span>.
+Dieses Tool generiert Daten, passt ein Modell per Kleinste‑Quadrate an und zeigt R² (und adj. R²).
+</p>
+
+<div class="row">
+  <div class="panel" style="max-width:380px">
+    <h2 style="margin-top:0;font-size:18px">Steuerung</h2>
+    <label>Grundfunktion (wahrer Zusammenhang)</label>
+    <select id="truth">
+      <option value="linear">Linear: y = a x + b</option>
+      <option value="quad">Quadratisch: y = a x² + b x + c</option>
+      <option value="sine">Sinus: y = A sin(2π f x) + c</option>
+    </select>
+    <label>Anzahl Punkte n: <span id="nval"></span></label>
+    <input id="n" type="range" min="10" max="400" step="10" value="100">
+    <label>Rauschstärke σ (additiv, normalverteilt): <span id="sigval"></span></label>
+    <input id="sigma" type="range" min="0" max="2.0" step="0.05" value="0.4">
+    <label>Ausreißer‑Anteil: <span id="outval"></span>%</label>
+    <input id="outliers" type="range" min="0" max="30" step="5" value="0">
+    <label>x‑Bereich</label>
+    <input id="xmin" type="number" value="-2" step="0.5"> bis 
+    <input id="xmax" type="number" value="2" step="0.5">
+    <hr>
+    <label>Fit‑Modell</label>
+    <select id="model">
+      <option value="lin">Linear: ŷ = β₁ x + β₀</option>
+      <option value="lin0">Linear ohne Achsenabschnitt: ŷ = β₁ x</option>
+      <option value="quad">Quadratisch: ŷ = β₂ x² + β₁ x + β₀</option>
+    </select>
+    <div style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap">
+      <button id="regen">Neu sampeln</button>
+      <button id="exportPNG">Plot als PNG</button>
+    </div>
+  </div>
+
+  <div class="panel" style="flex:2 1 520px">
+    <h2 style="margin-top:0;font-size:18px">Daten & Modell</h2>
+    <canvas id="plot" width="800" height="420"></canvas>
+    <div class="grid" style="margin-top:10px">
+      <div class="kpi"><b>R²</b><div class="mono" id="r2">–</div></div>
+      <div class="kpi"><b>Adj. R²</b><div class="mono" id="r2adj">–</div></div>
+      <div class="kpi"><b>SS<sub>res</sub></b><div class="mono" id="ssres">–</div></div>
+      <div class="kpi"><b>SS<sub>tot</sub></b><div class="mono" id="sstot">–</div></div>
+      <div class="kpi"><b>σ̂<sub>resid</sub></b><div class="mono" id="sres">–</div><div class="small">= √(SS<sub>res</sub>/(n−p))</div></div>
+      <div class="kpi"><b>Parameter β</b><div class="mono" id="beta">–</div></div>
+    </div>
+  </div>
+
+  <div class="panel" style="flex:1 1 380px">
+    <h2 style="margin-top:0;font-size:18px">Residual‑Plot</h2>
+    <canvas id="resplot" width="420" height="320"></canvas>
+    <p class="small">Homoskedastisch ≈ „Streuweite konstant“ → zufällige Wolke um 0. Muster (Trichter, Bögen) deuten auf Modellmissspezifikation oder Heteroskedastizität.</p>
+  </div>
+</div>
+
+<script>
+function randn() { let u=0,v=0; while(!u)u=Math.random(); while(!v)v=Math.random(); return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v); }
+function mean(a){ return a.reduce((s,x)=>s+x,0)/a.length; }
+function linspace(a,b,n){ const out=[]; for(let i=0;i<n;i++) out.push(a+(b-a)*i/(n-1)); return out; }
+
+function solveNormal(X, y){
+  const n = X.length, p = X[0].length;
+  const XtX = Array.from({length:p},()=>Array(p).fill(0));
+  const Xty = Array(p).fill(0);
+  for(let i=0;i<n;i++){
+    for(let a=0;a<p;a++){
+      Xty[a] += X[i][a]*y[i];
+      for(let b=0;b<p;b++) XtX[a][b] += X[i][a]*X[i][b];
+    }
+  }
+  for(let i=0;i<p;i++){
+    let maxr=i; for(let r=i+1;r<p;r++) if (Math.abs(XtX[r][i])>Math.abs(XtX[maxr][i])) maxr=r;
+    if (maxr!==i){ [XtX[i],XtX[maxr]]=[XtX[maxr],XtX[i]]; [Xty[i],Xty[maxr]]=[Xty[maxr],Xty[i]]; }
+    const piv = XtX[i][i] || 1e-12;
+    for(let c=i;c<p;c++) XtX[i][c] /= piv; Xty[i] /= piv;
+    for(let r=0;r<p;r++){ if(r===i) continue; const f=XtX[r][i]; for(let c=i;c<p;c++) XtX[r][c]-=f*XtX[i][c]; Xty[r]-=f*Xty[i]; }
+  }
+  return Xty;
+}
+
+function designRow(x, model){ if(model==="lin") return [1,x]; if(model==="lin0") return [x]; if(model==="quad") return [1,x,x*x]; return [1,x]; }
+function predict(beta,x,model){ if(model==="lin") return beta[0]+beta[1]*x; if(model==="lin0") return beta[0]*x; if(model==="quad") return beta[0]+beta[1]*x+beta[2]*x*x; return beta[0]+beta[1]*x; }
+function truthFunc(x, truth){ if(truth==="linear") return 1.2*x-0.5; if(truth==="quad") return 0.7*x*x-0.6*x+0.2; if(truth==="sine") return 1.0*Math.sin(2*Math.PI*0.4*x)+0.1; return x; }
+
+function clear(ctx){ ctx.clearRect(0,0,ctx.canvas.width, ctx.canvas.height); }
+function plotAxes(ctx, xMin,xMax, yMin,yMax){
+  ctx.strokeStyle="#bbb"; ctx.lineWidth=1; ctx.beginPath();
+  const y0 = mapY(0,yMin,yMax,ctx.canvas.height); ctx.moveTo(0,y0); ctx.lineTo(ctx.canvas.width,y0);
+  const x0 = mapX(0,xMin,xMax,ctx.canvas.width); ctx.moveTo(x0,0); ctx.lineTo(x0,ctx.canvas.height); ctx.stroke();
+}
+function mapX(x,xMin,xMax,W){ return (x-xMin)/(xMax-xMin)*W; }
+function mapY(y,yMin,yMax,H){ return H - (y-yMin)/(yMax-yMin)*H; }
+
+const els = {
+  truth: document.getElementById('truth'),
+  n: document.getElementById('n'),
+  sigma: document.getElementById('sigma'),
+  outliers: document.getElementById('outliers'),
+  xmin: document.getElementById('xmin'),
+  xmax: document.getElementById('xmax'),
+  model: document.getElementById('model'),
+  nval: document.getElementById('nval'),
+  sigval: document.getElementById('sigval'),
+  outval: document.getElementById('outval'),
+  r2: document.getElementById('r2'),
+  r2adj: document.getElementById('r2adj'),
+  ssres: document.getElementById('ssres'),
+  sstot: document.getElementById('sstot'),
+  sres: document.getElementById('sres'),
+  beta: document.getElementById('beta'),
+  plot: document.getElementById('plot'),
+  resplot: document.getElementById('resplot'),
+  regen: document.getElementById('regen'),
+  exportPNG: document.getElementById('exportPNG'),
+};
+let data = {x:[], y:[]};
+
+function regenerate(){
+  const n = parseInt(els.n.value,10);
+  const xMin = parseFloat(els.xmin.value), xMax = parseFloat(els.xmax.value);
+  const xs = linspace(xMin, xMax, n);
+  const sigma = parseFloat(els.sigma.value);
+  const truth = els.truth.value;
+  const outFrac = parseInt(els.outliers.value,10)/100;
+  const y = xs.map(x => truthFunc(x, truth) + sigma*randn());
+  const m = Math.floor(n*outFrac);
+  for(let i=0;i<m;i++){
+    const idx = Math.floor(Math.random()*n);
+    y[idx] += (2+3*Math.random()) * (Math.random()<0.5?-1:1);
+  }
+  data = {x: xs, y: y};
+  update();
+}
+
+function fitAndMetrics(){
+  const x = data.x, y = data.y;
+  const model = els.model.value;
+  const X = x.map(xi => designRow(xi, model));
+  const beta = solveNormal(X, y);
+  const yhat = x.map((xi)=>predict(beta, xi, model));
+  const ybar = mean(y);
+  let ssres=0, sstot=0;
+  for(let i=0;i<y.length;i++){ const ri=y[i]-yhat[i]; ssres+=ri*ri; const di=y[i]-ybar; sstot+=di*di; }
+  const r2 = 1 - ssres/sstot;
+  const p = X[0].length, n = y.length;
+  const r2adj = 1 - (1-r2)*(n-1)/(n-p-1);
+  const s_resid = Math.sqrt(ssres/Math.max(1,(n-p)));
+  return {beta, yhat, ssres, sstot, r2, r2adj, s_resid};
+}
+
+function update(){
+  els.nval.textContent = els.n.value;
+  els.sigval.textContent = parseFloat(els.sigma.value).toFixed(2);
+  els.outval.textContent = els.outliers.value;
+
+  const ctx = els.plot.getContext('2d'); clear(ctx);
+  const x = data.x, y = data.y; if (x.length===0){ regenerate(); return; }
+  const {beta, yhat, ssres, sstot, r2, r2adj, s_resid} = fitAndMetrics();
+
+  const ymin = Math.min(...y, ...yhat), ymax = Math.max(...y, ...yhat);
+  const pad = 0.1*(ymax-ymin || 1);
+  const Ymin = ymin - pad, Ymax = ymax + pad;
+  const Xmin = parseFloat(els.xmin.value), Xmax = parseFloat(els.xmax.value);
+
+  plotAxes(ctx, Xmin,Xmax, Ymin,Ymax);
+
+  // truth
+  ctx.strokeStyle="#aaa"; ctx.lineWidth=1.5; ctx.setLineDash([4,4]);
+  ctx.beginPath();
+  const Txs = linspace(Xmin, Xmax, 200);
+  for(let i=0;i<Txs.length;i++){
+    const px = mapX(Txs[i], Xmin,Xmax, ctx.canvas.width);
+    const py = mapY(truthFunc(Txs[i], els.truth.value), Ymin,Ymax, ctx.canvas.height);
+    if (i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+  } ctx.stroke(); ctx.setLineDash([]);
+
+  // fitted
+  ctx.strokeStyle="#3a86ff"; ctx.lineWidth=3; ctx.beginPath();
+  const fx = linspace(Xmin, Xmax, 300);
+  for(let i=0;i<fx.length;i++){
+    const yi = predict(beta, fx[i], els.model.value);
+    const px = mapX(fx[i], Xmin,Xmax, ctx.canvas.width);
+    const py = mapY(yi, Ymin,Ymax, ctx.canvas.height);
+    if (i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+  } ctx.stroke();
+
+  // points
+  ctx.fillStyle="rgba(0,0,0,0.65)";
+  for(let i=0;i<x.length;i++){
+    const px = mapX(x[i], Xmin,Xmax, ctx.canvas.width);
+    const py = mapY(y[i], Ymin,Ymax, ctx.canvas.height);
+    ctx.fillRect(px-2, py-2, 4, 4);
+  }
+
+  els.r2.textContent = r2.toFixed(4);
+  els.r2adj.textContent = r2adj.toFixed(4);
+  els.ssres.textContent = ssres.toFixed(4);
+  els.sstot.textContent = sstot.toFixed(4);
+  els.sres.textContent = s_resid.toFixed(4);
+  els.beta.textContent = JSON.stringify(beta.map(b=>+b.toFixed(4)));
+
+  // residual plot
+  const rctx = els.resplot.getContext('2d'); clear(rctx);
+  const r = y.map((v,i)=>v-yhat[i]);
+  const rmin = Math.min(...r), rmax=Math.max(...r);
+  const rpad = 0.1*(rmax-rmin || 1);
+  const Rmin = rmin-rpad, Rmax = rmax+rpad;
+  const ry0 = mapY(0,Rmin,Rmax,rctx.canvas.height);
+  rctx.strokeStyle="#bbb"; rctx.beginPath(); rctx.moveTo(0,ry0); rctx.lineTo(rctx.canvas.width,ry0); rctx.stroke();
+  rctx.fillStyle="rgba(230,57,70,0.85)";
+  for(let i=0;i<x.length;i++){
+    const px = mapX(x[i], Xmin,Xmax, rctx.canvas.width);
+    const py = mapY(r[i], Rmin,Rmax, rctx.canvas.height);
+    rctx.fillRect(px-2, py-2, 4, 4);
+  }
+}
+
+['truth','n','sigma','outliers','xmin','xmax','model'].forEach(id=>{
+  document.getElementById(id).addEventListener('input', ()=>{
+    if (id==='xmin' || id==='xmax'){ update(); } else { regenerate(); }
+  });
+});
+document.getElementById('regen').addEventListener('click', regenerate);
+document.getElementById('exportPNG').addEventListener('click', ()=>{
+  const link = document.createElement('a'); link.download='r2_demo_plot.png'; link.href = els.plot.toDataURL('image/png'); link.click();
+});
+regenerate();
+</script>
+</body>
+</html>

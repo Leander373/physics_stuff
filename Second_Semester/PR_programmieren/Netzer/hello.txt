@@ -1,0 +1,4 @@
+eQz4Mg8e1z_xPVxx8YQW
+
+
+git config --global credential.helper 'cache --timeout=7200'

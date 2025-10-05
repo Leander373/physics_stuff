@@ -1,0 +1,242 @@
+
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Interactive Variance & Covariance Demo</title>
+<style>
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:20px;line-height:1.4}
+  h1{margin:0 0 12px 0;font-size:22px}
+  .row{display:flex;gap:20px;flex-wrap:wrap}
+  .panel{flex:1 1 360px;min-width:320px;border:1px solid #ddd;border-radius:12px;padding:16px;box-shadow:0 2px 8px rgba(0,0,0,.04)}
+  label{display:block;margin:10px 0 4px}
+  input[type=range]{width:100%}
+  canvas{border:1px solid #eee;border-radius:8px;background:#fff}
+  .small{color:#555;font-size:14px}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace}
+  table{border-collapse:collapse;margin-top:10px}
+  td{border:1px solid #ddd;padding:4px 8px}
+</style>
+</head>
+<body>
+<h1>Interactive Variance & Covariance</h1>
+<p class="small">
+Move the sliders to change the covariance matrix 
+<span class="mono">Σ = [[var1, cov12], [cov12, var2]]</span>.
+You’ll see random samples from a 2D Gaussian, plus the 1σ and 2σ covariance ellipses.
+</p>
+
+<div class="row">
+  <div class="panel">
+    <h2 style="margin-top:0;font-size:18px;">Controls</h2>
+    <label>var1 (σ<sub>1</sub><sup>2</sup>): <span id="v1v"></span></label>
+    <input id="var1" type="range" min="0.2" max="5" step="0.1" value="2.0">
+    <label>var2 (σ<sub>2</sub><sup>2</sup>): <span id="v2v"></span></label>
+    <input id="var2" type="range" min="0.2" max="5" step="0.1" value="1.2">
+    <label>cov12: <span id="c12v"></span></label>
+    <input id="cov12" type="range" min="-2.0" max="2.0" step="0.1" value="0.8">
+    <label>samples (n): <span id="nv"></span></label>
+    <input id="n" type="range" min="100" max="3000" step="100" value="1000">
+    <p class="small">Tip: Try a large positive cov12 (tilted ellipse up-right) and a large negative one (tilted up-left).</p>
+    <table class="mono">
+      <tr><td>Σ[0,0]</td><td id="s00"></td><td>Σ[0,1]</td><td id="s01"></td></tr>
+      <tr><td>Σ[1,0]</td><td id="s10"></td><td>Σ[1,1]</td><td id="s11"></td></tr>
+    </table>
+  </div>
+  <div class="panel">
+    <h2 style="margin-top:0;font-size:18px;">2D Gaussian</h2>
+    <canvas id="plot2d" width="560" height="560"></canvas>
+    <p class="small">
+      Ellipses show directions of principal variance (eigenvectors of Σ) and 1σ/2σ scale (square-roots of eigenvalues).
+    </p>
+  </div>
+</div>
+
+<div class="panel" style="margin-top:20px;">
+  <h2 style="margin-top:0;font-size:18px;">1D Variance (Bonus)</h2>
+  <label>σ (standard deviation): <span id="sigv"></span></label>
+  <input id="sigma" type="range" min="0.2" max="2.5" step="0.1" value="1.0">
+  <canvas id="plot1d" width="800" height="240"></canvas>
+  <p class="small">The curve is the probability density of <span class="mono">N(0, σ²)</span>. Larger σ → wider bell.</p>
+</div>
+
+<script>
+// RNG: Box-Muller standard normals
+function randn_bm() {
+  let u = 0, v = 0;
+  while(u === 0) u = Math.random();
+  while(v === 0) v = Math.random();
+  return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+}
+
+// Cholesky for 2x2 SPD
+function chol2x2(a,b,c){ // matrix [[a,b],[b,c]]
+  const L11 = Math.sqrt(a);
+  const L21 = b / L11;
+  const L22 = Math.sqrt(c - L21*L21);
+  return [[L11,0],[L21,L22]];
+}
+
+// Multiply 2x2 by vector
+function matvec2(A, v){
+  return [A[0][0]*v[0] + A[0][1]*v[1], A[1][0]*v[0] + A[1][1]*v[1]];
+}
+
+// Eigen-decomposition for 2x2 symmetric
+function eig2x2(a,b,c){
+  const tr = a + c;
+  const det = a*c - b*b;
+  const disc = Math.sqrt(Math.max(tr*tr/4 - det, 0));
+  const l1 = tr/2 + disc;
+  const l2 = tr/2 - disc;
+  // eigenvector for l1: (b, l1-a) or (l1-c, b)
+  let v1 = [b, l1 - a];
+  if (Math.abs(v1[0]) + Math.abs(v1[1]) < 1e-12) v1 = [l1 - c, b];
+  const n1 = Math.hypot(v1[0], v1[1]); v1 = [v1[0]/n1, v1[1]/n1];
+  const v2 = [-v1[1], v1[0]]; // orthonormal
+  return {vals:[l1,l2], vecs:[v1,v2]};
+}
+
+// Drawing helpers
+function clearCanvas(ctx){ ctx.clearRect(0,0,ctx.canvas.width, ctx.canvas.height); }
+function toScreen(x,y, W,H, scale){
+  // center (0,0) in the middle; y positive up
+  const cx = W/2, cy = H/2;
+  return [cx + x*scale, cy - y*scale];
+}
+function drawEllipse(ctx, mean, a,b, angle, scale, strokeStyle="#d22"){
+  ctx.save();
+  ctx.translate(ctx.canvas.width/2, ctx.canvas.height/2);
+  ctx.rotate(-angle);
+  ctx.beginPath();
+  ctx.ellipse(0, 0, a*scale, b*scale, 0, 0, 2*Math.PI);
+  ctx.strokeStyle = strokeStyle;
+  ctx.lineWidth = 2;
+  ctx.setLineDash([6,4]);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function update(){
+  const var1 = parseFloat(document.getElementById('var1').value);
+  const var2 = parseFloat(document.getElementById('var2').value);
+  const cov12 = parseFloat(document.getElementById('cov12').value);
+  const n = parseInt(document.getElementById('n').value,10);
+
+  document.getElementById('v1v').textContent = var1.toFixed(2);
+  document.getElementById('v2v').textContent = var2.toFixed(2);
+  document.getElementById('c12v').textContent = cov12.toFixed(2);
+  document.getElementById('nv').textContent = n;
+
+  // ensure SPD: clamp cov12 s.t. |cov12| <= sqrt(var1*var2)-1e-6
+  const maxCov = Math.sqrt(var1*var2) - 1e-6;
+  let c12 = Math.max(-maxCov, Math.min(maxCov, cov12));
+  if (c12 !== cov12){
+    document.getElementById('cov12').value = c12.toFixed(2);
+    document.getElementById('c12v').textContent = c12.toFixed(2);
+  }
+
+  // show Σ
+  document.getElementById('s00').textContent = var1.toFixed(3);
+  document.getElementById('s01').textContent = c12.toFixed(3);
+  document.getElementById('s10').textContent = c12.toFixed(3);
+  document.getElementById('s11').textContent = var2.toFixed(3);
+
+  const canvas = document.getElementById('plot2d');
+  const ctx = canvas.getContext('2d');
+  clearCanvas(ctx);
+
+  // axes
+  ctx.strokeStyle = "#888";
+  ctx.lineWidth = 1;
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(canvas.width/2, 0); ctx.lineTo(canvas.width/2, canvas.height);
+  ctx.moveTo(0, canvas.height/2); ctx.lineTo(canvas.width, canvas.height/2);
+  ctx.stroke();
+
+  // sampling via Cholesky
+  const L = chol2x2(var1, c12, var2);
+  const scale = 40; // pixels per unit
+
+  // points
+  ctx.fillStyle = "rgba(0,0,0,0.25)";
+  for(let i=0;i<n;i++){
+    const z1 = randn_bm();
+    const z2 = randn_bm();
+    const [x,y] = matvec2(L, [z1,z2]); // mean 0
+    const [sx, sy] = toScreen(x,y, canvas.width, canvas.height, scale);
+    if (sx>=0 && sx<canvas.width && sy>=0 && sy<canvas.height){
+      ctx.fillRect(sx, sy, 2, 2);
+    }
+  }
+
+  // ellipses from eigen-decomposition
+  const {vals, vecs} = eig2x2(var1, c12, var2);
+  const lam1 = Math.max(vals[0], 1e-9), lam2 = Math.max(vals[1], 1e-9);
+  const v = vecs[0];
+  const angle = Math.atan2(v[1], v[0]);
+
+  // 1σ (axes = sqrt(lam)), 2σ (2*sqrt(lam))
+  drawEllipse(ctx, [0,0], Math.sqrt(lam1), Math.sqrt(lam2), angle, scale);
+  drawEllipse(ctx, [0,0], 2*Math.sqrt(lam1), 2*Math.sqrt(lam2), angle, scale);
+}
+
+// 1D variance demo
+function update1D(){
+  const sigma = parseFloat(document.getElementById('sigma').value);
+  document.getElementById('sigv').textContent = sigma.toFixed(2);
+  const c = document.getElementById('plot1d');
+  const ctx = c.getContext('2d');
+  ctx.clearRect(0,0,c.width,c.height);
+
+  // axes
+  ctx.strokeStyle = "#888";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, c.height-20); ctx.lineTo(c.width, c.height-20);
+  ctx.moveTo(c.width/2, 0); ctx.lineTo(c.width/2, c.height);
+  ctx.stroke();
+
+  // Gaussian pdf N(0, σ^2)
+  function pdf(x){ return (1/(Math.sqrt(2*Math.PI)*sigma)) * Math.exp(-x*x/(2*sigma*sigma)); }
+
+  // scale
+  const xMin=-4, xMax=4;
+  const yMax = pdf(0);
+  function x2px(x){ return (x - xMin)/(xMax-xMin) * c.width; }
+  function y2px(y){ return c.height-20 - (y/yMax) * (c.height-40); }
+
+  ctx.strokeStyle = "#06c";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for(let i=0;i<=400;i++){
+    const x = xMin + (xMax-xMin)*(i/400);
+    const y = pdf(x);
+    const px = x2px(x), py = y2px(y);
+    if (i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+  }
+  ctx.stroke();
+
+  // draw +/- sigma markers
+  ctx.setLineDash([6,4]);
+  ctx.strokeStyle = "#c33";
+  const xs = [-sigma, sigma].map(x2px);
+  xs.forEach(px=>{
+    ctx.beginPath(); ctx.moveTo(px, y2px(0)); ctx.lineTo(px, y2px(yMax*0.98)); ctx.stroke();
+  });
+  ctx.setLineDash([]);
+}
+
+document.getElementById('var1').addEventListener('input', update);
+document.getElementById('var2').addEventListener('input', update);
+document.getElementById('cov12').addEventListener('input', update);
+document.getElementById('n').addEventListener('input', update);
+document.getElementById('sigma').addEventListener('input', update1D);
+
+update();
+update1D();
+</script>
+</body>
+</html>
